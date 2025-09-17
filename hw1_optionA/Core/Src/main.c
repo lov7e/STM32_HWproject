@@ -29,8 +29,8 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef enum {
-  BTN_MSG_SHORT = 0,   // 短按：5s @ 1Hz
-  BTN_MSG_LONG  = 1    // 長按：5s @ 10Hz
+  BTN_MSG_SHORT = 0,
+  BTN_MSG_LONG  = 1
 } BtnMsg_t;
 /* USER CODE END PTD */
 
@@ -71,10 +71,10 @@ const osThreadAttr_t defaultTask_attributes = {
 // RTOS handles
 osThreadId_t task1Handle, task2Handle;
 osMutexId_t  gBlinkMutex;
-osSemaphoreId_t semTimer;        // 10s 定時（沿用 semaphore）
-osMessageQueueId_t qBtn;         // 按鍵事件（改用 Queue）
+osSemaphoreId_t semTimer;
+osMessageQueueId_t qBtn;
 
-// 長按/去彈跳（在 EXTI 中使用）
+
 static volatile uint32_t btnPressTick = 0;
 static volatile bool     btnPressed   = false;
 static volatile uint32_t lastIrqTick  = 0;
@@ -104,20 +104,19 @@ static void blink_blocking(uint32_t duration_ms, float hz);
 static inline uint32_t osMillis(void)
 {
   uint32_t tick = osKernelGetTickCount();
-  uint32_t hz   = osKernelGetTickFreq();    // ticks per second
+  uint32_t hz   = osKernelGetTickFreq();
   return (tick * 1000U) / hz;
 }
 
-// ===== 整段閃爍受 Mutex 保護 =====
 static void blink_blocking(uint32_t duration_ms, float hz)
 {
   osMutexAcquire(gBlinkMutex, osWaitForever);
 
   uint32_t period_ms = (uint32_t)(1000.0f / hz);
-  if (period_ms < 2) period_ms = 2; // 避免除 2 為 0
+  if (period_ms < 2) period_ms = 2;
   uint32_t elapsed = 0;
 
-  // 對等 on/off：每半週期切一次
+
   while (elapsed < duration_ms) {
     HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
     osDelay(period_ms / 2);
@@ -128,13 +127,13 @@ static void blink_blocking(uint32_t duration_ms, float hz)
     elapsed += period_ms / 2;
   }
 
-  // 收尾：關燈
+
   HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
 
   osMutexRelease(gBlinkMutex);
 }
 
-// ===== Task_1：依短/長按決定閃爍型態 =====
+
 static void Task1(void *argument)
 {
   (void)argument;
@@ -142,17 +141,17 @@ static void Task1(void *argument)
     BtnMsg_t msg;
     if (osMessageQueueGet(qBtn, &msg, NULL, osWaitForever) == osOK) {
       if (msg == BTN_MSG_LONG) {
-        // 長按：5s @ 10Hz
+
         blink_blocking(5000, 10.0f);
       } else {
-        // 短按：5s @ 1Hz
+
         blink_blocking(5000, 1.0f);
       }
     }
   }
 }
 
-// ===== Task_2：每 10s 自動觸發（2s @ 10Hz）=====
+
 static void Task2(void *argument)
 {
   (void)argument;
@@ -163,26 +162,26 @@ static void Task2(void *argument)
   }
 }
 
-// ===== EXTI 回呼：同時處理去彈跳與長按量測 =====
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  if (GPIO_Pin == BUTTON_EXTI13_Pin) {   // 依專案巨集名稱
-    // 簡易去彈跳：忽略 40ms 內的重入
+  if (GPIO_Pin == BUTTON_EXTI13_Pin) {
+
     uint32_t nowMs = osMillis();
     if ((nowMs - lastIrqTick) < 40U) {
       return;
     }
     lastIrqTick = nowMs;
 
-    // 讀腳位判斷當前狀態（低=按下、高=放開，視硬體極性；相反就改邏輯）
+
     GPIO_PinState state = HAL_GPIO_ReadPin(BUTTON_EXTI13_GPIO_Port, BUTTON_EXTI13_Pin);
 
     if (state == GPIO_PIN_RESET) {
-      // 假設低電位＝按下
+
       btnPressed   = true;
-      btnPressTick = osKernelGetTickCount();   // 記 tick（用 tick 計，再轉 ms）
+      btnPressTick = osKernelGetTickCount();
     } else {
-      // 放開：計算按住時間
+
       if (btnPressed) {
         btnPressed = false;
         uint32_t pressTicks = osKernelGetTickCount() - btnPressTick;
@@ -190,18 +189,18 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
         BtnMsg_t msg = (heldMs >= 1000U) ? BTN_MSG_LONG : BTN_MSG_SHORT;
 
-        // 從 ISR 丟訊息到 Queue（CMSIS-RTOS2 on FreeRTOS 支援 ISR-safe）
+
         (void)osMessageQueuePut(qBtn, &msg, 0, 0);
       }
     }
   }
 }
 
-// ===== TIM6 週期回呼：喚醒 Task_2 =====
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM6) {
-    osSemaphoreRelease(semTimer);  // ISR-safe
+    osSemaphoreRelease(semTimer);
   }
 }
 /* USER CODE END 0 */
@@ -244,7 +243,7 @@ int main(void)
   MX_USB_OTG_FS_PCD_Init();
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
-  HAL_TIM_Base_Start_IT(&htim6);  // 啟動 10s 定時中斷
+  HAL_TIM_Base_Start_IT(&htim6);
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -270,7 +269,7 @@ int main(void)
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
      const osMessageQueueAttr_t qAttr = { .name = "btnQueue" };
-       qBtn = osMessageQueueNew(4, sizeof(BtnMsg_t), &qAttr);  // 深度 4 就很夠
+       qBtn = osMessageQueueNew(4, sizeof(BtnMsg_t), &qAttr);
 
   /* USER CODE END RTOS_QUEUES */
 
